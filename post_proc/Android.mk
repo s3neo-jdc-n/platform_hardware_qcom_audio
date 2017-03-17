@@ -39,6 +39,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libdl
 
 LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_OWNER := qcom
+LOCAL_PROPRIETARY_MODULE := true
 
 LOCAL_MODULE_RELATIVE_PATH := soundfx
 LOCAL_MODULE:= libqcompostprocbundle
@@ -99,6 +101,8 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_MODULE_RELATIVE_PATH := soundfx
 LOCAL_MODULE:= libvolumelistener
+LOCAL_MODULE_OWNER := qcom
+LOCAL_PROPRIETARY_MODULE := true
 
 LOCAL_C_INCLUDES := \
         $(call include-path-for, audio-effects)
