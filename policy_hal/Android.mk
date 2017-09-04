@@ -35,7 +35,8 @@ LOCAL_SHARED_LIBRARIES := \
     liblog \
     libsoundtrigger \
     libaudiopolicymanagerdefault \
-    libserviceutility
+    libserviceutility \
+    libbase
 
 LOCAL_STATIC_LIBRARIES := \
     libmedia_helper \
