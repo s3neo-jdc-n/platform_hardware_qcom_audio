@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  * Not a contribution.
  *
  * Copyright (C) 2009 The Android Open Source Project
@@ -25,11 +25,15 @@
 
 namespace android {
 #ifndef AUDIO_EXTN_FORMATS_ENABLED
+#ifndef WMA_OFFLOAD_ENABLED
 #define AUDIO_FORMAT_WMA 0x12000000UL
 #define AUDIO_FORMAT_WMA_PRO 0x13000000UL
+#endif
 #define AUDIO_FORMAT_FLAC 0x1B000000UL
 #define AUDIO_FORMAT_ALAC 0x1C000000UL
+#ifndef APE_OFFLOAD_ENABLED
 #define AUDIO_FORMAT_APE 0x1D000000UL
+#endif
 #endif
 
 #ifndef AAC_ADTS_OFFLOAD_ENABLED
@@ -40,11 +44,9 @@ namespace android {
 #define AUDIO_DEVICE_OUT_PROXY 0x1000000
 #endif
 
-#ifdef AUDIO_FEATURE_ENABLED_WMA_OFFLOAD
 #define MAX_BITRATE_WMA          384000
 #define MAX_BITRATE_WMA_PRO      1536000
 #define MAX_BITRATE_WMA_LOSSLESS 1152000
-#endif
 // ----------------------------------------------------------------------------
 
 class AudioPolicyManagerCustom: public AudioPolicyManager
@@ -69,21 +71,19 @@ public:
                                          audio_io_handle_t *input,
                                          audio_session_t session,
                                          uid_t uid,
-                                         const audio_config_base_t *config,
+                                         uint32_t samplingRate,
+                                         audio_format_t format,
+                                         audio_channel_mask_t channelMask,
                                          audio_input_flags_t flags,
                                          audio_port_handle_t selectedDeviceId,
-                                         input_type_t *inputType,
-                                         audio_port_handle_t *portId);
+                                         input_type_t *inputType);
         // indicates to the audio policy manager that the input starts being used.
         virtual status_t startInput(audio_io_handle_t input,
-                                    audio_session_t session,
-                                    concurrency_type__mask_t *concurrency);
+                                    audio_session_t session);
         // indicates to the audio policy manager that the input stops being used.
         virtual status_t stopInput(audio_io_handle_t input,
                                    audio_session_t session);
-        virtual status_t setStreamVolumeIndex(audio_stream_type_t stream,
-                                              int index,
-                                              audio_devices_t device);
+
         virtual void closeAllInputs();
 
 protected:
@@ -94,17 +94,23 @@ protected:
                                                    audio_devices_t device,
                                                    int delayMs = 0, bool force = false);
 
+        // selects the most appropriate device on output for current state
+        // must be called every time a condition that affects the device choice for a given output is
+        // changed: connected device, phone state, force use, output start, output stop..
+        // see getDeviceForStrategy() for the use of fromCache parameter
+        audio_devices_t getNewOutputDevice(const sp<AudioOutputDescriptor>& outputDesc,
+                                           bool fromCache);
         // returns true if given output is direct output
         bool isDirectOutput(audio_io_handle_t output);
 
         // if argument "device" is different from AUDIO_DEVICE_NONE,  startSource() will force
         // the re-evaluation of the output device.
-        status_t startSource(const sp<AudioOutputDescriptor>& outputDesc,
+        status_t startSource(sp<AudioOutputDescriptor> outputDesc,
                              audio_stream_type_t stream,
                              audio_devices_t device,
                              const char *address,
                              uint32_t *delayMs);
-         status_t stopSource(const sp<AudioOutputDescriptor>& outputDesc,
+         status_t stopSource(sp<AudioOutputDescriptor> outputDesc,
                             audio_stream_type_t stream,
                             bool forceDeviceUpdate);
         // event is one of STARTING_OUTPUT, STARTING_BEACON, STOPPING_OUTPUT, STOPPING_BEACON
@@ -116,6 +122,7 @@ protected:
         static audio_output_flags_t getFallBackPath();
         int mFallBackflag;
 #endif /*VOICE_CONCURRENCY*/
+        void moveGlobalEffect();
 
         // handle special cases for sonification strategy while in call: mute streams or replace by
         // a special tone in the device used for communication
@@ -144,10 +151,12 @@ private:
                 audio_session_t session,
                 audio_stream_type_t *stream,
                 uid_t uid,
-                const audio_config_t *config,
+                uint32_t samplingRate,
+                audio_format_t format,
+                audio_channel_mask_t channelMask,
                 audio_output_flags_t flags,
                 audio_port_handle_t selectedDeviceId,
-                audio_port_handle_t *portId);
+                const audio_offload_info_t *offloadInfo);
         // Used for voip + voice concurrency usecase
         int mPrevPhoneState;
 #ifdef VOICE_CONCURRENCY
@@ -157,15 +166,8 @@ private:
         // Used for record + playback concurrency
         bool mIsInputRequestOnProgress;
 #endif
-
-#ifdef DRIVER_SIDE_PLAYBACK_ENABLED
-        sp<SwAudioOutputDescriptor> mDriverSideOutput;
-        sp<IOProfile> mDriverSideProfile;
-#endif
-
-#ifdef FM_POWER_OPT
         float mPrevFMVolumeDb;
         bool mFMIsActive;
-#endif
 };
+
 };
