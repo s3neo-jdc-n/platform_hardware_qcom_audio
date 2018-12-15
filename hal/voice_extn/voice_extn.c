@@ -1,5 +1,8 @@
 /*
- * Copyright (C) 2014-2016 The Android Open Source Project
+ * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Not a contribution.
+ *
+ * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +22,8 @@
 #define LOG_NDDEBUG 0
 
 #include <errno.h>
-#include <math.h>
 #include <stdlib.h>
+#include <math.h>
 #include <cutils/log.h>
 #include <cutils/str_parms.h>
 #include <sys/ioctl.h>
@@ -38,6 +41,7 @@
 #define AUDIO_PARAMETER_KEY_ALL_CALL_STATES     "all_call_states"
 #define AUDIO_PARAMETER_KEY_DEVICE_MUTE         "device_mute"
 #define AUDIO_PARAMETER_KEY_DIRECTION           "direction"
+#define AUDIO_PARAMETER_KEY_CALL_TYPE           "call_type"
 
 #define VOICE_EXTN_PARAMETER_VALUE_MAX_LEN 256
 
@@ -160,7 +164,6 @@ static int update_calls(struct audio_device *adev)
     audio_usecase_t usecase_id = 0;
     enum voice_lch_mode lch_mode;
     struct voice_session *session = NULL;
-    int fd = 0;
     int ret = 0;
 
     ALOGD("%s: enter:", __func__);
@@ -195,11 +198,11 @@ static int update_calls(struct audio_device *adev)
             case CALL_LOCAL_HOLD:
                 ALOGD("%s: LOCAL_HOLD -> ACTIVE vsid:%x", __func__, session->vsid);
                 lch_mode = VOICE_LCH_STOP;
-                if (pcm_ioctl(session->pcm_tx, SNDRV_VOICE_IOCTL_LCH, &lch_mode) < 0) {
-                    ALOGE("LOCAL_HOLD -> ACTIVE failed");
-                } else {
+                ret = platform_update_lch(adev->platform, session, lch_mode);
+                if (ret < 0)
+                    ALOGE("%s: lch mode update failed, ret = %d", __func__, ret);
+                else
                     session->state.current = session->state.new;
-                }
                 break;
 
             default:
@@ -243,11 +246,11 @@ static int update_calls(struct audio_device *adev)
             case CALL_LOCAL_HOLD:
                 ALOGD("%s: CALL_LOCAL_HOLD -> HOLD vsid:%x", __func__, session->vsid);
                 lch_mode = VOICE_LCH_STOP;
-                if (pcm_ioctl(session->pcm_tx, SNDRV_VOICE_IOCTL_LCH, &lch_mode) < 0) {
-                    ALOGE("LOCAL_HOLD -> HOLD failed");
-                } else {
+                ret = platform_update_lch(adev->platform, session, lch_mode);
+                if (ret < 0)
+                    ALOGE("%s: lch mode update failed, ret = %d", __func__, ret);
+                else
                     session->state.current = session->state.new;
-                }
                 break;
 
             default:
@@ -265,11 +268,11 @@ static int update_calls(struct audio_device *adev)
                 ALOGD("%s: ACTIVE/CALL_HOLD -> LOCAL_HOLD vsid:%x", __func__,
                       session->vsid);
                 lch_mode = VOICE_LCH_START;
-                if (pcm_ioctl(session->pcm_tx, SNDRV_VOICE_IOCTL_LCH, &lch_mode) < 0) {
-                    ALOGE("LOCAL_HOLD -> HOLD failed");
-                } else {
+                ret = platform_update_lch(adev->platform, session, lch_mode);
+                if (ret < 0)
+                    ALOGE("%s: lch mode update failed, ret = %d", __func__, ret);
+                else
                     session->state.current = session->state.new;
-                }
                 break;
 
             default:
@@ -345,19 +348,6 @@ int voice_extn_is_call_state_active(struct audio_device *adev, bool *is_call_act
             *is_call_active = true;
             break;
         }
-    }
-
-    return 0;
-}
-
-int voice_extn_is_in_call_rec_stream(struct stream_in *in, bool *in_call_rec)
-{
-    *in_call_rec = false;
-
-    if(in->source == AUDIO_SOURCE_VOICE_DOWNLINK ||
-       in->source == AUDIO_SOURCE_VOICE_UPLINK ||
-       in->source == AUDIO_SOURCE_VOICE_CALL) {
-       *in_call_rec = true;
     }
 
     return 0;
@@ -439,22 +429,18 @@ int voice_extn_stop_call(struct audio_device *adev)
      * set routing with device BT A2DP profile. Hence end all voice calls when
      * set_mode(AUDIO_MODE_NORMAL) before BT A2DP profile is selected.
      */
-    if (adev->mode == AUDIO_MODE_NORMAL) {
-        ALOGD("%s: end all calls", __func__);
-        for (i = 0; i < MAX_VOICE_SESSIONS; i++) {
-            adev->voice.session[i].state.new = CALL_INACTIVE;
-        }
-
-        ret = update_calls(adev);
+    ALOGD("%s: end all calls", __func__);
+    for (i = 0; i < MAX_VOICE_SESSIONS; i++) {
+        adev->voice.session[i].state.new = CALL_INACTIVE;
     }
 
+    ret = update_calls(adev);
     return ret;
 }
 
 int voice_extn_set_parameters(struct audio_device *adev,
                               struct str_parms *parms)
 {
-    char *str;
     int value;
     int ret = 0, err;
     char *kv_pairs = str_parms_to_str(parms);
@@ -515,6 +501,20 @@ int voice_extn_set_parameters(struct audio_device *adev,
         }
     }
 
+    err = str_parms_get_str(parms, AUDIO_PARAMETER_KEY_CALL_TYPE, str_value,
+                            sizeof(str_value));
+    if (err >= 0) {
+          str_parms_del(parms, AUDIO_PARAMETER_KEY_CALL_TYPE);
+          ALOGD("%s: call type is %s",__func__,str_value);
+
+           /* Expected call types are CDMA/GSM/WCDMA/LTE/TDSDMA/WLAN/UNKNOWN */
+           if (!strncmp("GSM", str_value, sizeof("GSM"))) {
+               platform_set_gsm_mode(adev->platform, true);
+           } else {
+               platform_set_gsm_mode(adev->platform, false);
+           }
+    }
+
 done:
     ALOGV("%s: exit with code(%d)", __func__, ret);
     free(kv_pairs);
@@ -566,10 +566,25 @@ void voice_extn_get_parameters(const struct audio_device *adev,
         }
         str_parms_add_str(reply, AUDIO_PARAMETER_KEY_ALL_CALL_STATES, value);
     }
+    voice_extn_compress_voip_get_parameters(query, reply);
 
     str = str_parms_to_str(reply);
     ALOGV_IF(str != NULL, "%s: exit: returns \"%s\"", __func__, str);
     free(str);
+}
+
+void voice_extn_out_get_parameters(struct stream_out *out,
+                                   struct str_parms *query,
+                                   struct str_parms *reply)
+{
+    voice_extn_compress_voip_out_get_parameters(out, query, reply);
+}
+
+void voice_extn_in_get_parameters(struct stream_in *in,
+                                  struct str_parms *query,
+                                  struct str_parms *reply)
+{
+    voice_extn_compress_voip_in_get_parameters(in, query, reply);
 }
 
 #ifdef INCALL_MUSIC_ENABLED

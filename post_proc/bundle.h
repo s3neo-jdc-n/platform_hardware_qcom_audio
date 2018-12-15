@@ -1,5 +1,8 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ * Not a contribution.
+ *
+ * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +27,9 @@
 /* Retry for delay for mixer open */
 #define RETRY_NUMBER 10
 #define RETRY_US 500000
-
+#ifdef HW_ACCELERATED_EFFECTS
+#define EFFECT_CMD_HW_ACC 20
+#endif
 #define MIXER_CARD 0
 #define SOUND_CARD 0
 
@@ -45,6 +50,7 @@ struct output_context_s {
     int pcm_device_id;
     struct mixer *mixer;
     struct mixer_ctl *ctl;
+    struct mixer_ctl *ref_ctl;
 };
 
 /* effect specific operations.
@@ -63,6 +69,7 @@ struct effect_ops_s {
     int (*set_parameter)(effect_context_t *context, effect_param_t *param, uint32_t size);
     int (*get_parameter)(effect_context_t *context, effect_param_t *param, uint32_t *size);
     int (*set_device)(effect_context_t *context, uint32_t device);
+    int (*set_hw_acc_mode)(effect_context_t *context, int32_t value);
     int (*command)(effect_context_t *context, uint32_t cmdCode, uint32_t cmdSize,
             void *pCmdData, uint32_t *replySize, void *pReplyData);
 };
@@ -79,6 +86,7 @@ struct effect_context_s {
     audio_io_handle_t out_handle;
     uint32_t state;
     bool offload_enabled;
+    bool hw_acc_enabled;
     effect_ops_t ops;
 };
 
